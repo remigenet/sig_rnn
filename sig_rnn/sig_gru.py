@@ -1,17 +1,9 @@
 import keras
 from keras import ops
-from keras.layers import Layer
+from keras.layers import Layer, Dense
 import numpy as np
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 from keras_sig import SigLayer
-
-import keras
-from keras import ops
-from keras.layers import Layer
-import numpy as np
-from typing import Optional, Tuple
-from keras_sig import SigLayer
-from typing import Union
 
 @keras.utils.register_keras_serializable(name="SignatureGRU")
 class SignatureGRU(Layer):
@@ -19,6 +11,7 @@ class SignatureGRU(Layer):
         self,
         units: int,
         signature_depth: int = 2,
+        signature_input_size: int = 5,
         return_sequences: bool = False,
         return_state: bool = False,
         unroll_level: Union[bool,int] = 10,
@@ -39,6 +32,7 @@ class SignatureGRU(Layer):
         self.signature_depth = signature_depth
         self.return_sequences = return_sequences
         self.return_state = return_state
+        self.signature_input_size = signature_input_size
         
         # Will be set in build()
         self.state_size = units
@@ -50,13 +44,13 @@ class SignatureGRU(Layer):
         self.unroll_level = unroll_level 
         
     def build(self, input_shape):
-        input_dim = input_shape[-1]
+        batch_size, seq_len, features = input_shape
 
         self.signature = SigLayer(self.signature_depth, stream=True)
-        self.signature.build(input_shape)
+        self.signature.build((batch_size, seq_len, self.signature_input_size))
         
         # Calculate signature dimension
-        self.signature_dim = sum(input_dim ** i for i in range(1, self.signature_depth + 1))
+        self.signature_dim = sum(self.signature_input_size ** i for i in range(1, self.signature_depth + 1))
         
         # Kernel for signature-based reset gate
         self.reset_kernel = self.add_weight(
@@ -67,7 +61,7 @@ class SignatureGRU(Layer):
         
         # Standard GRU kernels for update gate and candidate
         self.input_kernel = self.add_weight(
-            shape=(input_dim, self.units * 2),  # 2 for update gate and candidate
+            shape=(features, self.units * 2),  # 2 for update gate and candidate
             initializer='glorot_uniform',
             name='input_kernel'
         )
@@ -84,6 +78,9 @@ class SignatureGRU(Layer):
             initializer='zeros',
             name='bias'
         )
+
+        self.linear_preprocess_inputs_for_sig = Dense(self.signature_input_size, 'linear', use_bias=False)
+        self.linear_preprocess_inputs_for_sig.build(input_shape)
         
         super().build(input_shape)
     
@@ -122,7 +119,7 @@ class SignatureGRU(Layer):
             If return_state=True: Tuple of (output, final_state)
         """
         # Compute signatures for reset gate
-        signatures = self.signature(inputs)
+        signatures = self.signature(self.linear_preprocess_inputs_for_sig(inputs))
         normalized_signatures = self._normalize_signature_by_time(signatures)
         
         # Get sequence length and pre-compute input transformations for all timesteps
@@ -197,7 +194,7 @@ class SignatureGRU(Layer):
             If return_state=True: Tuple of (output, final_state)
         """
         # Compute signatures for reset gate
-        signatures = self.signature(inputs)
+        signatures = self.signature(self.linear_preprocess_inputs_for_sig(inputs))
         normalized_signatures = self._normalize_signature_by_time(signatures)
         
         # Pre-compute input transformations for all timesteps

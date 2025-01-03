@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "sig_rnn" 
-version = "0.0.1" 
+version = "0.1.0" 
 description = "Signature gated RNN"
 authors = [ "Rémi Genet", "Hugo Inzirillo"]  
 readme = "README.md"  
